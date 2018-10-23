@@ -1,17 +1,13 @@
-from itertools import chain
-import ujson as json
 import argparse
-import pickle
-import re
-from collections import Counter
-from os import walk, mkdir, makedirs
-from os.path import relpath, join, exists
+import ujson as json
+from itertools import chain
+from os import makedirs
+from os.path import join, exists
 from typing import Set
 
 from tqdm import tqdm
 
 from docqa import config
-from docqa.config import CORPUS_DIR
 from docqa.data_processing.text_utils import NltkAndPunctTokenizer
 from docqa.triviaqa.read_data import normalize_wiki_filename
 from docqa.utils import group, split, flatten_iterable
@@ -57,7 +53,7 @@ def build_vocab(corpus, tokenizer)->Set[str]:
     return voc
 
 
-def build_tokenized_corpus(input_root, tokenizer, output_dir, skip_dirs=False, n_processes=1):
+def build_tokenized_corpus(input_root, tokenizer, output_dir, n_processes=1):
     if not exists(output_dir):
         makedirs(output_dir)
 
