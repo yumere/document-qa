@@ -279,7 +279,11 @@ class RandomParagraphSetDataset(Dataset):
                 with_answer = [i for i, p in enumerate(q.paragraphs) if len(p.answer_spans) > 0]
                 for ix, over_sample in zip(list(with_answer), self.oversample_first_answer):
                     with_answer += [ix] * over_sample
-                answer_selection = with_answer[np.random.randint(len(with_answer))]
+                try:
+                    answer_selection = with_answer[np.random.randint(len(with_answer))]
+                except:
+                    # print(with_answer)
+                    continue
                 other = np.array([i for i, x in enumerate(q.paragraphs) if i != answer_selection])
                 selected = np.random.choice(other, min(len(other), self.n_paragraphs-1), replace=False)
                 selected = np.insert(selected, 0, answer_selection)
@@ -319,7 +323,7 @@ class RandomParagraphSetDataset(Dataset):
             raise RuntimeError()
 
     def get_samples(self, n_examples):
-        questions = np.random.choice(self.questions, n_examples, replace=False)
+        questions = np.random.choice(self.questions, n_examples, replace=True)
         if self.mode == "flatten":
             n_batches = self.batcher.epoch_size(sum(min(len(q.paragraphs), self.n_paragraphs) for q in questions))
         else:
@@ -583,6 +587,21 @@ class RandomParagraphSetDatasetBuilder(DatasetBuilder):
         else:
             ov = self.oversample_first_answer
         return RandomParagraphSetDataset(data, l, 2, self.batch_size, self.mode, self.force_answer, ov)
+
+
+class HotpotParagraphSetDatasetBuilder(RandomParagraphSetDatasetBuilder):
+
+    def build_dataset(self, data: Union[FilteredData, List], corpus) -> Dataset:
+        if isinstance(data, FilteredData):
+            l = data.true_len
+            data = data.data
+        else:
+            l = len(data)
+        if isinstance(self.oversample_first_answer, int):
+            ov = [self.oversample_first_answer]
+        else:
+            ov = self.oversample_first_answer
+        return RandomParagraphSetDataset(data, l, 10, self.batch_size, self.mode, self.force_answer, ov)
 
 
 class StratifyParagraphSetsBuilder(DatasetBuilder):
