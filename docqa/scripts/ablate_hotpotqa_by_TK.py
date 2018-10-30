@@ -8,7 +8,7 @@ from docqa import model_dir
 from docqa import trainer
 from docqa.data_processing.document_splitter import MergeParagraphs, TopTfIdf
 from docqa.data_processing.multi_paragraph_qa import StratifyParagraphsBuilder, \
-    StratifyParagraphSetsBuilder, RandomParagraphSetDatasetBuilder
+    StratifyParagraphSetsBuilder, RandomParagraphSetDatasetBuilder, HotpotParagraphSetDatasetBuilder
 from docqa.data_processing.preprocessed_corpus import PreprocessedData
 from docqa.data_processing.qa_training_data import ParagraphAndQuestionsBuilder, ContextLenKey, ContextLenBucketedKey
 from docqa.data_processing.text_utils import NltkPlusStopWords
@@ -161,8 +161,8 @@ def main():
             n_epochs = 14
             # test = StratifyParagraphSetsBuilder(50, mode == "merge", True, 1)
             # train = StratifyParagraphSetsBuilder(10, mode == "merge", True, 1)
-            test = RandomParagraphSetDatasetBuilder(50, "merge" if mode == "merge" else "group", True, 1)
-            train = RandomParagraphSetDatasetBuilder(10, "merge" if mode == "merge" else "group", True, 1)
+            test = HotpotParagraphSetDatasetBuilder(64, "merge" if mode == "merge" else "group", True, 1)
+            train = HotpotParagraphSetDatasetBuilder(32, "merge" if mode == "merge" else "group", True, 1)
 
     data = HotpotQaSpanDataset("hotpotqa")
 

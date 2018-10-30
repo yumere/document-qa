@@ -1,0 +1,73 @@
+{
+  "train_params": {
+    "name": "TrainParams",
+    "async_encoding": 10,
+    "best_weights": null,
+    "ema": 0.9999,
+    "eval_at_zero": false,
+    "eval_period": 1800,
+    "eval_samples": {
+      "dev": 100,
+      "train": 1000
+    },
+    "log_period": 30,
+    "loss_ema": 0.999,
+    "max_checkpoints_to_keep": 2,
+    "monitor_ema": 0.999,
+    "num_epochs": 14,
+    "opt": {
+      "name": "SerializableOptimizer",
+      "opt_name": "Adadelta",
+      "params": {
+        "learning_rate": 1
+      }
+    },
+    "regularization_weight": null,
+    "save_period": 1800
+  },
+  "data": {
+    "name": "hotpotqa",
+    "builder": {
+      "name": "HotpotParagraphSetDatasetBuilder",
+      "batch_size": 32,
+      "force_answer": true,
+      "mode": "merge",
+      "oversample_first_answer": 1
+    },
+    "corpus": {
+      "name": "hotpotqa",
+      "corpus_name": "hotpotqa"
+    },
+    "eval_builder": {
+      "name": "HotpotParagraphSetDatasetBuilder",
+      "batch_size": 64,
+      "force_answer": true,
+      "mode": "merge",
+      "oversample_first_answer": 1
+    },
+    "eval_on_train": true,
+    "eval_on_verified": false,
+    "hold_out_train": null,
+    "preprocesser": null,
+    "sample": null,
+    "sample_dev": null,
+    "sample_preprocessed_train": null,
+    "sample_seed": null
+  },
+  "start_at": 0,
+  "evaluators": [
+    {
+      "name": "LossEvaluator"
+    },
+    {
+      "name": "MultiParagraphSpanEvaluator",
+      "bound": 8,
+      "eval": "triviaqa",
+      "k_tau": true,
+      "paragraph_level": false,
+      "per_doc": true
+    }
+  ],
+  "date": "1030-141827",
+  "host": "davian3-desktop"
+}

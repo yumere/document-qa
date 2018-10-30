@@ -79,7 +79,10 @@ class HotpotQaSpanDataset(Configurable):
                     question_id = question['_id']
                     question_text = self.tokenizer.tokenize_paragraph_flat(question['question'])
                     answer_text = [question['answer']]
-                    paragraphs = self._get_document_paragraph(question['context'], answer_text)
+                    supporting_facts = question['supporting_facts']
+                    paragraphs = self._get_document_paragraph(question['context'], answer_text,
+                                                              answer_para=supporting_facts)
+
 
                     if d == 'train':
                         self._train.append(MultiParagraphQuestion(question_id, question_text, answer_text, paragraphs))
@@ -89,11 +92,18 @@ class HotpotQaSpanDataset(Configurable):
         self._train = FilteredData(self._train, len(self._train))
         self._dev = FilteredData(self._dev, len(self._dev))
 
-    def _get_document_paragraph(self, documents, answers):
+    def _get_document_paragraph(self, documents, answers, answer_para=None):
         paragraphs = list()
 
         tokenized_aliases = [self.tokenizer.tokenize_paragraph_flat(x) for x in answers]
         self.detector.set_question(tokenized_aliases)
+
+        if answer_para is not None:
+            answer_para_title = [p[0] for p in answer_para]
+            documents = [d for d in documents if d[0] in answer_para_title]
+
+        if len(documents) < 2:
+            print("ERROR")
 
         for d in documents:
             title, paragraph = d[0], d[1]
