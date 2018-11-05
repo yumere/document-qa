@@ -229,6 +229,92 @@ class ParagraphSelection(object):
         self.n_context_words = max(len(question.paragraphs[i].text) for i in selection)
 
 
+class HotpotParagraphSetDataset(Dataset):
+    """
+    Sample multiple paragraphs for each question and include them in the same batch
+    """
+
+    def __init__(self,
+                 questions: List[MultiParagraphQuestion], true_len: int, n_paragraphs: int,
+                 batch_size: int, mode: str, force_answer: bool,
+                 oversample_first_answer: List[int]):
+        self.mode = mode
+        self.questions = questions
+        self.force_answer = force_answer
+        self.true_len = true_len
+        self.n_paragraphs = n_paragraphs
+        self.oversample_first_answer = oversample_first_answer
+        self._n_pairs = sum(min(len(q.paragraphs), n_paragraphs) for q in questions)
+        self.batcher = ClusteredBatcher(batch_size, lambda x: x.n_context_words, truncate_batches=True)
+
+    def get_vocab(self):
+        voc = set()
+        for q in self.questions:
+            voc.update(q.question)
+            for para in q.paragraphs:
+                voc.update(para.text)
+        return voc
+
+    def get_spec(self):
+        max_q_len = max(len(q.question) for q in self.questions)
+        max_c_len = max(max(len(p.text) for p in q.paragraphs) for q in self.questions)
+        return ParagraphAndQuestionSpec(self.batcher.get_fixed_batch_size() if self.mode == "merge" else None,
+                                        max_q_len, max_c_len, None)
+
+    def get_epoch(self):
+        return self._build_expanded_batches(self.questions)
+
+    def _build_expanded_batches(self, questions):
+        # We first pick paragraph(s) for each question in the entire training set so we
+        # can cluster by context length accurately
+        out = []
+        for q in questions:
+            # with_answer = [i for i, p in enumerate(q.paragraphs) if len(p.answer_spans) > 0]
+            # for ix, over_sample in zip(list(with_answer), self.oversample_first_answer):
+            #     with_answer += [ix] * over_sample
+            # try:
+            #     answer_selection = with_answer[np.random.randint(len(with_answer))]
+            # except:
+            #     # print(with_answer)
+            #     continue
+            # other = np.array([i for i, x in enumerate(q.paragraphs) if i != answer_selection])
+            # selected = np.random.choice(other, min(len(other), self.n_paragraphs-1), replace=False)
+            # selected = np.insert(selected, 0, answer_selection)
+
+            out.append(ParagraphSelection(q, [0, 1]))
+
+        out.sort(key=lambda x: x.n_context_words)
+
+        if self.mode == "merge":
+            for selection_batch in self.batcher.get_epoch(out):
+                batch = []
+                for selected in selection_batch:
+                    q = selected.question
+                    paras = [q.paragraphs[i] for i in selected.selection]
+                    para = paras[0].merge(paras)
+                    batch.append(para.build_qa_pair(q.question, q.question_id, q.answer_text))
+                yield batch
+        else:
+            raise RuntimeError()
+
+    def get_samples(self, n_examples):
+        questions = np.random.choice(self.questions, n_examples, replace=True)
+        if self.mode == "flatten":
+            n_batches = self.batcher.epoch_size(sum(min(len(q.paragraphs), self.n_paragraphs) for q in questions))
+        else:
+            n_batches = self.batcher.epoch_size(n_examples)
+        return self._build_expanded_batches(np.random.choice(questions, n_examples, replace=False)), n_batches
+
+    def percent_filtered(self):
+        return (self.true_len - len(self.questions)) / self.true_len
+
+    def __len__(self):
+        if self.mode == "flatten":
+            return self.batcher.epoch_size(self._n_pairs)
+        else:
+            return self.batcher.epoch_size(len(self.questions))
+
+
 class RandomParagraphSetDataset(Dataset):
     """
     Sample multiple paragraphs for each question and include them in the same batch
@@ -279,7 +365,11 @@ class RandomParagraphSetDataset(Dataset):
                 with_answer = [i for i, p in enumerate(q.paragraphs) if len(p.answer_spans) > 0]
                 for ix, over_sample in zip(list(with_answer), self.oversample_first_answer):
                     with_answer += [ix] * over_sample
-                answer_selection = with_answer[np.random.randint(len(with_answer))]
+                try:
+                    answer_selection = with_answer[np.random.randint(len(with_answer))]
+                except:
+                    # print(with_answer)
+                    continue
                 other = np.array([i for i, x in enumerate(q.paragraphs) if i != answer_selection])
                 selected = np.random.choice(other, min(len(other), self.n_paragraphs-1), replace=False)
                 selected = np.insert(selected, 0, answer_selection)
@@ -319,7 +409,7 @@ class RandomParagraphSetDataset(Dataset):
             raise RuntimeError()
 
     def get_samples(self, n_examples):
-        questions = np.random.choice(self.questions, n_examples, replace=False)
+        questions = np.random.choice(self.questions, n_examples, replace=True)
         if self.mode == "flatten":
             n_batches = self.batcher.epoch_size(sum(min(len(q.paragraphs), self.n_paragraphs) for q in questions))
         else:
@@ -583,6 +673,21 @@ class RandomParagraphSetDatasetBuilder(DatasetBuilder):
         else:
             ov = self.oversample_first_answer
         return RandomParagraphSetDataset(data, l, 2, self.batch_size, self.mode, self.force_answer, ov)
+
+
+class HotpotParagraphSetDatasetBuilder(RandomParagraphSetDatasetBuilder):
+
+    def build_dataset(self, data: Union[FilteredData, List], corpus) -> Dataset:
+        if isinstance(data, FilteredData):
+            l = data.true_len
+            data = data.data
+        else:
+            l = len(data)
+        if isinstance(self.oversample_first_answer, int):
+            ov = [self.oversample_first_answer]
+        else:
+            ov = self.oversample_first_answer
+        return HotpotParagraphSetDataset(data, l, 10, self.batch_size, self.mode, self.force_answer, ov)
 
 
 class StratifyParagraphSetsBuilder(DatasetBuilder):
