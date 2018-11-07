@@ -13,11 +13,7 @@ from typing import List, Optional, Dict
 from docqa.config import CORPUS_DIR, TRIVIA_QA, TRIVIA_QA_UNFILTERED
 from docqa.configurable import Configurable
 from docqa.data_processing.text_utils import NltkAndPunctTokenizer
-<<<<<<< HEAD
 from docqa.hotpotqa.answer_detection import FastNormalizedAnswerDetector, NormalizedAnswerDetector
-=======
-from docqa.hotpotqa.answer_detection import FastNormalizedAnswerDetector
->>>>>>> 346160672b6d9b29906c2f5709580f865401ab6b
 from docqa.triviaqa.evidence_corpus import TriviaQaEvidenceCorpusTxt
 from docqa.triviaqa.read_data import iter_trivia_question, TriviaQaQuestion
 from docqa.utils import ResourceLoader
@@ -33,15 +29,11 @@ class HotpotQaSpanDataset(Configurable):
         self.dir = join(CORPUS_DIR, self.corpus_name)
         self.tokenizer = NltkAndPunctTokenizer()
         self.detector = FastNormalizedAnswerDetector()
-<<<<<<< HEAD
         # self.detector = NormalizedAnswerDetector()
-=======
->>>>>>> 346160672b6d9b29906c2f5709580f865401ab6b
 
         self._train, self._raw_train = list(), None
         self._dev, self._raw_dev = list(), None
 
-<<<<<<< HEAD
         self.missed_answer = 0
 
         with open(join(self.dir, "hotpot_train_v1.json"), "rb") as f_train:
@@ -51,15 +43,6 @@ class HotpotQaSpanDataset(Configurable):
         with open(join(self.dir, "hotpot_dev_distractor_v1.json"), "rb") as f_dev:
             self._raw_dev = json.load(f_dev)[:200]
             # self._raw_dev = json.load(f_dev)
-=======
-        with open(join(self.dir, "hotpot_train_v1.json"), "rb") as f_train:
-            self._raw_train = json.load(f_train)
-            # self._raw_train = json.load(f_train)[:2000]
-
-        with open(join(self.dir, "hotpot_dev_distractor_v1.json"), "rb") as f_dev:
-            # self._raw_dev = json.load(f_dev)[:200]
-            self._raw_dev = json.load(f_dev)
->>>>>>> 346160672b6d9b29906c2f5709580f865401ab6b
 
 
             # with open(join(self.dir, "file_map.json"), "r") as f:
@@ -94,7 +77,6 @@ class HotpotQaSpanDataset(Configurable):
 
         for d in dataset:
             print("preprocess for {}".format(d))
-<<<<<<< HEAD
             self.missed_answer = 0
             for question in tqdm(dataset[d]):
                 # if question['type'] == 'bridge':
@@ -107,31 +89,16 @@ class HotpotQaSpanDataset(Configurable):
                                                           answer_para=supporting_facts)
 
                 if paragraphs is not None:
-=======
-            for question in tqdm(dataset[d]):
-                if question['type'] == 'bridge':
-                    question_id = question['_id']
-                    question_text = self.tokenizer.tokenize_paragraph_flat(question['question'])
-                    answer_text = [question['answer']]
-                    supporting_facts = question['supporting_facts']
-                    paragraphs = self._get_document_paragraph(question['context'], answer_text,
-                                                              answer_para=supporting_facts)
-
-
->>>>>>> 346160672b6d9b29906c2f5709580f865401ab6b
                     if d == 'train':
                         self._train.append(MultiParagraphQuestion(question_id, question_text, answer_text, paragraphs))
                     elif d == 'dev':
                         self._dev.append(MultiParagraphQuestion(question_id, question_text, answer_text, paragraphs))
 
-<<<<<<< HEAD
             print("{} missed data count: {}".format(d, self.missed_answer))
 
         print('train size: ', len(self._train))
         print('dev size: ', len(self._dev))
 
-=======
->>>>>>> 346160672b6d9b29906c2f5709580f865401ab6b
         self._train = FilteredData(self._train, len(self._train))
         self._dev = FilteredData(self._dev, len(self._dev))
 
@@ -141,15 +108,12 @@ class HotpotQaSpanDataset(Configurable):
         tokenized_aliases = [self.tokenizer.tokenize_paragraph_flat(x) for x in answers]
         self.detector.set_question(tokenized_aliases)
 
-<<<<<<< HEAD
         answer_type = 2
         if answers[0].lower() == 'yes':
             answer_type = 0
         elif answers[0].lower() == 'no':
             answer_type = 1
 
-=======
->>>>>>> 346160672b6d9b29906c2f5709580f865401ab6b
         if answer_para is not None:
             answer_para_title = [p[0] for p in answer_para]
             documents = [d for d in documents if d[0] in answer_para_title]
@@ -157,7 +121,6 @@ class HotpotQaSpanDataset(Configurable):
         if len(documents) < 2:
             print("ERROR")
 
-<<<<<<< HEAD
         get_answer_span = False
 
         for i, d in enumerate(documents):
@@ -165,17 +128,10 @@ class HotpotQaSpanDataset(Configurable):
             text_paragraph = " ".join(paragraph)
             text = self.tokenizer.tokenize_paragraph_flat(text_paragraph)
             # text = text_paragraph.split()
-=======
-        for d in documents:
-            title, paragraph = d[0], d[1]
-            text_paragraph = " ".join(paragraph)
-            text = self.tokenizer.tokenize_paragraph_flat(text_paragraph)
->>>>>>> 346160672b6d9b29906c2f5709580f865401ab6b
 
             start, end = 0, len(text) - 1
             rank = -1
 
-<<<<<<< HEAD
             if answer_type == 2:
                 spans = []
                 offset = 0
@@ -204,19 +160,6 @@ class HotpotQaSpanDataset(Configurable):
         if not get_answer_span:
             self.missed_answer += 1
             return None
-=======
-            spans = []
-            offset = 0
-            for s, e in self.detector.any_found([text]):
-                spans.append((s+offset, e+offset-1))
-
-            if len(spans) == 0:
-                answer_spans = np.zeros((0, 2), dtype=np.int32)
-            else:
-                answer_spans = np.array(spans, dtype=np.int32)
-
-            paragraphs.append(DocumentParagraph(title, start, end, rank, answer_spans, text))
->>>>>>> 346160672b6d9b29906c2f5709580f865401ab6b
 
         return paragraphs
 
