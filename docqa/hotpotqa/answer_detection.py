@@ -53,16 +53,21 @@ class FastNormalizedAnswerDetector(object):
         self.strip = string.punctuation + "".join([u"‘", u"’", u"´", u"`", "_", "."])
 
         self.answer_tokens = None
+        self.temp_answer = None
+        self.temp_word = list()
 
     def set_question(self, normalized_aliases):
         self.answer_tokens = normalized_aliases
 
     def any_found(self, para):
         # Normalize the paragraph
+        self.temp_word = list()
         words = [w.lower().strip(self.strip) for w in flatten_iterable(para)]
         occurances = []
         for answer_ix, answer in enumerate(self.answer_tokens):
             answer = [w.lower().strip(self.strip) for w in answer]
+            self.temp_answer = answer
+            self.temp_word.append(words)
             # Locations where the first word occurs
             word_starts = [i for i, w in enumerate(words) if answer[0] == w]
             n_tokens = len(answer)

@@ -28,8 +28,8 @@ class HotpotQaSpanDataset(Configurable):
         self.corpus_name = corpus_name
         self.dir = join(CORPUS_DIR, self.corpus_name)
         self.tokenizer = NltkAndPunctTokenizer()
-        # self.detector = FastNormalizedAnswerDetector()
-        self.detector = NormalizedAnswerDetector()
+        self.detector = FastNormalizedAnswerDetector()
+        # self.detector = NormalizedAnswerDetector()
 
         self._train, self._raw_train = list(), None
         self._dev, self._raw_dev = list(), None
@@ -37,12 +37,12 @@ class HotpotQaSpanDataset(Configurable):
         self.missed_answer = 0
 
         with open(join(self.dir, "hotpot_train_v1.json"), "rb") as f_train:
-            self._raw_train = json.load(f_train)
-            # self._raw_train = json.load(f_train)[:2000]
+            # self._raw_train = json.load(f_train)
+            self._raw_train = json.load(f_train)[:2000]
 
         with open(join(self.dir, "hotpot_dev_distractor_v1.json"), "rb") as f_dev:
-            # self._raw_dev = json.load(f_dev)[:200]
-            self._raw_dev = json.load(f_dev)
+            self._raw_dev = json.load(f_dev)[:200]
+            # self._raw_dev = json.load(f_dev)
 
 
             # with open(join(self.dir, "file_map.json"), "r") as f:
@@ -80,14 +80,15 @@ class HotpotQaSpanDataset(Configurable):
             self.missed_answer = 0
             for question in tqdm(dataset[d]):
                 # if question['type'] == 'bridge':
-                if question['answer'] != 'yes' and question['answer'] != 'no':
-                    question_id = question['_id']
-                    question_text = self.tokenizer.tokenize_paragraph_flat(question['question'])
-                    answer_text = [question['answer']]
-                    supporting_facts = question['supporting_facts']
-                    paragraphs = self._get_document_paragraph(question['context'], answer_text,
-                                                              answer_para=supporting_facts)
+                # if question['answer'] != 'yes' and question['answer'] != 'no':
+                question_id = question['_id']
+                question_text = self.tokenizer.tokenize_paragraph_flat(question['question'])
+                answer_text = [question['answer']]
+                supporting_facts = question['supporting_facts']
+                paragraphs = self._get_document_paragraph(question['context'], answer_text,
+                                                          answer_para=supporting_facts)
 
+                if paragraphs is not None:
                     if d == 'train':
                         self._train.append(MultiParagraphQuestion(question_id, question_text, answer_text, paragraphs))
                     elif d == 'dev':
@@ -107,6 +108,12 @@ class HotpotQaSpanDataset(Configurable):
         tokenized_aliases = [self.tokenizer.tokenize_paragraph_flat(x) for x in answers]
         self.detector.set_question(tokenized_aliases)
 
+        answer_type = 2
+        if answers[0].lower() == 'yes':
+            answer_type = 0
+        elif answers[0].lower() == 'no':
+            answer_type = 1
+
         if answer_para is not None:
             answer_para_title = [p[0] for p in answer_para]
             documents = [d for d in documents if d[0] in answer_para_title]
@@ -116,7 +123,7 @@ class HotpotQaSpanDataset(Configurable):
 
         get_answer_span = False
 
-        for d in documents:
+        for i, d in enumerate(documents):
             title, paragraph = d[0], d[1]
             text_paragraph = " ".join(paragraph)
             text = self.tokenizer.tokenize_paragraph_flat(text_paragraph)
@@ -125,21 +132,34 @@ class HotpotQaSpanDataset(Configurable):
             start, end = 0, len(text) - 1
             rank = -1
 
-            spans = []
-            offset = 0
-            for s, e in self.detector.any_found([text]):
-                spans.append((s+offset, e+offset-1))
+            if answer_type == 2:
+                spans = []
+                offset = 0
+                for s, e in self.detector.any_found([text]):
+                    spans.append((s+offset, e+offset-1))
 
-            if len(spans) == 0:
-                answer_spans = np.zeros((0, 2), dtype=np.int32)
+                if len(spans) == 0:
+                    answer_spans = np.zeros((0, 2), dtype=np.int32)
+                else:
+                    get_answer_span = True
+                    answer_spans = np.array(spans, dtype=np.int32)
             else:
                 get_answer_span = True
-                answer_spans = np.array(spans, dtype=np.int32)
+                if i == 0:
+                    if answer_type == 0:
+                        answer_spans = np.array([[0, 0]], dtype=np.int32)
+                    else:
+                        answer_spans = np.array([[0, 0]], dtype=np.int32)
+                else:
+                    answer_spans = np.zeros((0, 2), dtype=np.int32)
 
-            paragraphs.append(DocumentParagraph(title, start, end, rank, answer_spans, text))
+            answer_yes_no = np.array([answer_type], dtype=np.int32)
+            paragraphs.append(DocumentParagraph(title, start, end, rank, answer_spans, text,
+                                                answer_yes_no=answer_yes_no))
 
         if not get_answer_span:
             self.missed_answer += 1
+            return None
 
         return paragraphs
 

@@ -463,6 +463,23 @@ class ChainBiMapper(SequenceBiMapper):
         return m1, m2
 
 
+class ChainTriMapper(SequenceBiMapper):
+    def __init__(self, first_layer: SequenceMapper, second_layer: SequenceMapper,
+                 third_layer: SequenceMapper):
+        self.first_layer = first_layer
+        self.second_layer = second_layer
+        self.third_layer = third_layer
+
+    def apply(self, is_train, x, mask=None):
+        with tf.variable_scope("out-1"):
+            m1 = self.first_layer.apply(is_train, x, mask)
+        with tf.variable_scope("out-2"):
+            m2 = self.first_layer.apply(is_train, tf.concat([x, m1], axis=2), mask)
+        with tf.variable_scope("chained-out"):
+            m3 = self.second_layer.apply(is_train, tf.concat([x, m2], axis=2), mask)
+        return m1, m2, m3
+
+
 class MapMulti(Configurable):
     """ Applies a layer to multiple inputs, possibly sharing parameters """
 

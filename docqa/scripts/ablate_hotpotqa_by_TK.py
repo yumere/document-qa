@@ -13,17 +13,18 @@ from docqa.data_processing.preprocessed_corpus import PreprocessedData
 from docqa.data_processing.qa_training_data import ParagraphAndQuestionsBuilder, ContextLenKey, ContextLenBucketedKey
 from docqa.data_processing.text_utils import NltkPlusStopWords
 from docqa.dataset import ClusteredBatcher
-from docqa.doc_qa_models import Attention
-from docqa.encoder import DocumentAndQuestionEncoder, DenseMultiSpanAnswerEncoder, GroupedSpanAnswerEncoder
-from docqa.evaluator import LossEvaluator, MultiParagraphSpanEvaluator, SpanEvaluator
+from docqa.doc_qa_models import Attention, HotpotAttention
+from docqa.encoder import DocumentAndQuestionEncoder, DenseMultiSpanAnswerEncoder, GroupedSpanAnswerEncoder, \
+                          DenseMultiSpanAnswerWithYesNoEncoder
+from docqa.evaluator import LossEvaluator, MultiParagraphSpanEvaluator, MultiParagraphSpanWithYesNoEvaluator, SpanEvaluator
 from docqa.nn.attention import BiAttention, AttentionEncoder, StaticAttentionSelf
 from docqa.nn.embedder import FixedWordEmbedder, CharWordEmbedder, LearnedCharEmbedder
 from docqa.nn.layers import NullBiMapper, SequenceMapperSeq, Conv1d, FullyConnected, \
-    ChainBiMapper, ConcatWithProduct, ResidualLayer, VariationalDropoutLayer, MaxPool
+    ChainBiMapper, ConcatWithProduct, ResidualLayer, VariationalDropoutLayer, MaxPool, ChainTriMapper
 from docqa.nn.recurrent_layers import CudnnGru
 from docqa.nn.similarity_layers import TriLinear
 from docqa.nn.span_prediction import ConfidencePredictor, BoundsPredictor, IndependentBoundsGrouped, \
-    IndependentBoundsSigmoidLoss
+    IndependentBoundsSigmoidLoss, BoundsPredictorWithYesNo
 from docqa.text_preprocessor import WithIndicators, TextPreprocessor
 from docqa.trainer import SerializableOptimizer, TrainParams
 
@@ -37,7 +38,7 @@ def get_triviaqa_train_params(n_epochs, n_dev, n_train):
     return TrainParams(
         SerializableOptimizer("Adadelta", dict(learning_rate=1)),
         num_epochs=n_epochs, ema=0.9999, max_checkpoints_to_keep=2,
-        async_encoding=10, log_period=30, eval_period=1800, save_period=1800,
+        async_encoding=10, log_period=30, eval_period=10, save_period=1800,
         eval_samples=dict(dev=n_dev, train=n_train))
 
 
@@ -74,15 +75,16 @@ def get_model(char_th: int, dim: int, mode: str, preprocess: Optional[TextPrepro
             span_predictor=IndependentBoundsSigmoidLoss()
         )
     elif mode == "paragraph" or mode == "merge":
-        answer_encoder = DenseMultiSpanAnswerEncoder()
-        predictor = BoundsPredictor(ChainBiMapper(
+        answer_encoder = DenseMultiSpanAnswerWithYesNoEncoder()
+        predictor = BoundsPredictorWithYesNo(ChainTriMapper(
             first_layer=recurrent_layer,
-            second_layer=recurrent_layer
+            second_layer=recurrent_layer,
+            third_layer=recurrent_layer
         ))
     else:
         raise NotImplementedError(mode)
 
-    return Attention(
+    return HotpotAttention(
         encoder=DocumentAndQuestionEncoder(answer_encoder),
         word_embed=FixedWordEmbedder(vec_name="glove.840B.300d", word_vec_init_scale=0, learn_unk=False, cpu=True),
         char_embed=CharWordEmbedder(
@@ -145,7 +147,7 @@ def main():
         n_dev, n_train = 21000, 12000
         eval = [LossEvaluator(), SpanEvaluator([4, 8], "triviaqa")]
     else:
-        eval = [LossEvaluator(), MultiParagraphSpanEvaluator(8, "triviaqa", mode != "merge")]
+        eval = [LossEvaluator(), MultiParagraphSpanWithYesNoEvaluator(8, "hotpotqa", mode != "merge")]
         # we sample two paragraphs per a (question, doc) pair, so evaluate on fewer questions
         n_dev, n_train = 100, 1000
 

@@ -206,6 +206,56 @@ def trivia_span_scores(data: List[ContextAndQuestion],
     return scores
 
 
+def hotpot_span_scores(data: List[ContextAndQuestion],
+                       prediction, answer_type):
+    scores = np.zeros((len(data), 4))
+    for i in range(len(data)):
+        para = data[i]
+        ans = para.answer
+        type = answer_type[i]
+
+        if type == 2:
+            pred_span = prediction[i]
+            # For TriviaQA we have generally called join-on-spaces approach good enough, since the answers here
+            # tend to be short and the gold standard has better normalization. Possibly could get a very
+            # small gain using the original text
+            pred_text = " ".join(para.get_context()[pred_span[0]:pred_span[1]+1])
+
+            span_correct = False
+            span_max_f1 = 0
+            text_correct = 0
+            text_max_f1 = 0
+
+            for word_start, word_end in ans.answer_spans:
+                answer_span = (word_start, word_end)
+                span_max_f1 = max(span_max_f1, compute_span_f1(answer_span, pred_span))
+                if answer_span == tuple(pred_span):
+                    span_correct = True
+
+            for text in ans.answer_text:
+                f1 = triviaqa_f1_score(pred_text, text)
+                correct = triviaqa_em_score(pred_text, text)
+                text_correct = max(text_correct, correct)
+                text_max_f1 = max(text_max_f1, f1)
+        else:
+            type_correct = False
+
+            if ans.answer_text[0].lower() == 'yes' and type == 0:
+                type_correct = True
+
+            if ans.answer_text[0].lower() == 'no'and type == 1:
+                type_correct = True
+
+            if type_correct:
+                span_correct = True
+                span_max_f1 = 1
+                text_correct = 1
+                text_max_f1 = 1
+
+        scores[i] = [span_correct, span_max_f1, text_correct, text_max_f1]
+    return scores
+
+
 class SpanEvaluator(Evaluator):
     """
     Evaluate span based models, if text_eval is a set it should produce exactly
@@ -288,6 +338,72 @@ class MultiParagraphSpanEvaluator(Evaluator):
             scores = trivia_span_scores(data, best_spans)
         elif self.eval == "squad":
             scores = squad_span_scores(data, best_spans)
+        else:
+            raise RuntimeError()
+
+        has_answer = np.array([len(x.answer.answer_spans) > 0 for x in data])
+
+        selected_paragraphs = {}
+        for i, point in enumerate(data):
+            if self.per_doc:
+                key = (point.question_id, point.doc_id)
+            else:
+                key = point.question_id
+            if key not in selected_paragraphs:
+                selected_paragraphs[key] = i
+            elif span_logits[i] > span_logits[selected_paragraphs[key]]:
+                selected_paragraphs[key] = i
+        selected_paragraphs = list(selected_paragraphs.values())
+
+        out = {
+            "question-text-em": scores[selected_paragraphs, 2].mean(),
+            "question-text-f1": scores[selected_paragraphs, 3].mean(),
+        }
+
+        if self.k_tau:
+            out["text-em-k-tau"] = kendalltau(span_logits, scores[:, 2])[0]
+            out["text-f1-k-tau"] = kendalltau(span_logits, scores[:, 3])[0]
+
+        if self.paragraph_level:
+            out["paragraph-text-em"] = scores[has_answer, 2].mean()
+            out["paragraph-text-f1"] = scores[has_answer, 3].mean()
+
+        prefix = "b%d/" % self.bound
+        return Evaluation({prefix+k: v for k,v in out.items()})
+
+    def __setstate__(self, state):
+        if "per_doc" not in state:
+            state["per_doc"] = True
+        super().__setstate__(state)
+
+
+class MultiParagraphSpanWithYesNoEvaluator(Evaluator):
+
+    def __init__(self, bound: int, eval, paragraph_level=True, k_tau=True,
+                 per_doc=True):
+        if eval not in ["squad", "triviaqa", "hotpotqa"]:
+            raise ValueError()
+        self.bound = bound
+        self.eval = eval
+        self.paragraph_level = paragraph_level
+        self.k_tau = k_tau
+        self.per_doc = per_doc
+
+    def tensors_needed(self, prediction):
+        span, score, type = prediction.get_best_span(self.bound)
+        return dict(span=span, score=score, type=type)
+
+    def evaluate(self, data: List[ContextAndQuestion], true_len, **kwargs):
+        best_spans = kwargs["span"]
+        span_logits = kwargs["score"]
+        answer_type = kwargs["type"]
+
+        if self.eval == "triviaqa":
+            scores = trivia_span_scores(data, best_spans)
+        elif self.eval == "squad":
+            scores = squad_span_scores(data, best_spans)
+        elif self.eval == "hotpotqa":
+            scores = hotpot_span_scores(data, best_spans, answer_type)
         else:
             raise RuntimeError()
 
