@@ -3,7 +3,7 @@ from typing import List, Optional, Union
 import tensorflow as tf
 from docqa.configurable import Configurable
 from docqa.nn.layers import SequenceBiMapper, MergeLayer, Mapper, get_keras_initialization, SequenceMapper, SequenceEncoder, \
-    FixedMergeLayer, AttentionPredictionLayer, SequencePredictionLayer, SequenceMultiEncoder
+    FixedMergeLayer, AttentionPredictionLayer, SequencePredictionLayer, SequenceMultiEncoder, ChainTriMapper, ReduceSequenceLayer
 from docqa.nn.span_prediction_ops import best_span_from_bounds, to_unpacked_coordinates, \
     to_packed_coordinates, packed_span_f1_mask
 from tensorflow import Tensor
@@ -45,6 +45,18 @@ class BoundaryPrediction(Prediction):
         bol_mask = tf.sequence_mask(self.mask, tf.shape(self.start_logits)[1])
         bol_mask = tf.cast(bol_mask, tf.float32)
         return tf.reduce_sum(logits*bol_mask, axis=[1]) / tf.reduce_sum(bol_mask, axis=[1])
+
+
+class BoundaryAndYesNoPrediction(BoundaryPrediction):
+
+    def __init__(self, start_prob, end_prob,
+                 start_logits, end_logits, answer_type, mask):
+        super(BoundaryAndYesNoPrediction, self).__init__(start_prob, end_prob, start_logits, end_logits, mask)
+        self.answer_type = answer_type
+
+    def get_best_span(self, bound: int):
+        pred = super(BoundaryAndYesNoPrediction, self).get_best_span(bound)
+        return pred[0], pred[1], self.answer_type
 
 
 class PackedSpanPrediction(Prediction):
@@ -149,6 +161,54 @@ class IndependentBounds(SpanFromBoundsPredictor):
         return BoundaryPrediction(tf.nn.softmax(masked_start_logits),
                                   tf.nn.softmax(masked_end_logits),
                                   masked_start_logits, masked_end_logits, mask)
+
+
+class IndependentBoundsWithYesNo(SpanFromBoundsPredictor):
+    def __init__(self, aggregate="sum"):
+        self.aggregate = aggregate
+
+    def predict(self, answer, start_logits, end_logits, yes_no_logits, mask) -> Prediction:
+        masked_start_logits = exp_mask(start_logits, mask)
+        masked_end_logits = exp_mask(end_logits, mask)
+
+        answer_yes_no = answer[-1]
+        losses_yes_no = tf.nn.softmax_cross_entropy_with_logits(logits=yes_no_logits, labels=answer_yes_no)
+
+        if len(answer) == 2:
+            # answer span is encoding in a sparse int array
+            answer_spans = answer[0]
+            losses1 = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                logits=masked_start_logits, labels=answer_spans[:, 0])
+            losses2 = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                logits=masked_end_logits, labels=answer_spans[:, 1])
+
+            loss = tf.add_n([tf.reduce_mean(losses1), tf.reduce_mean(losses2), tf.reduce_mean(losses_yes_no)], name="loss")
+        elif len(answer) == 3 and all(x.dtype == tf.int32 for x in answer):
+            # all correct start/end bounds are marked in a dense bool array
+            # In this case there might be multiple answer spans, so we need an aggregation strategy
+            losses = []
+            for answer_mask, logits in zip(answer[:-1], [masked_start_logits, masked_end_logits]):
+                log_norm = tf.reduce_logsumexp(logits, axis=1)
+                if self.aggregate == "sum":
+                    log_score = tf.reduce_logsumexp(logits +
+                                                    VERY_NEGATIVE_NUMBER * (1 - tf.cast(answer_mask, tf.float32)),
+                                                    axis=1)
+                elif self.aggregate == "max":
+                    log_score = tf.reduce_max(logits +
+                                              VERY_NEGATIVE_NUMBER * (1 - tf.cast(answer_mask, tf.float32)), axis=1)
+                else:
+                    raise ValueError()
+                losses.append(tf.reduce_mean(-(log_score - log_norm)))
+
+            losses.append(tf.reduce_mean(losses_yes_no))
+            loss = tf.add_n(losses)
+        else:
+            raise NotImplemented()
+
+        tf.add_to_collection(tf.GraphKeys.LOSSES, loss)
+        return BoundaryAndYesNoPrediction(tf.nn.softmax(masked_start_logits),
+                                          tf.nn.softmax(masked_end_logits),
+                                          masked_start_logits, masked_end_logits, tf.argmax(answer_yes_no, axis=-1), mask)
 
 
 class ForwardSpansOnly(SpanFromBoundsPredictor):
@@ -481,6 +541,47 @@ class BoundsPredictor(SequencePredictionLayer):
 
         with tf.variable_scope("predict_span"):
             return self.span_predictor.predict(answer, logits1, logits2, context_mask)
+
+    def __setstate__(self, state):
+        if "state" in state:
+            if "aggregate" in state["state"]:
+                state["state"]["bound_predictor"] = IndependentBounds(state["state"]["aggregate"])
+            elif "bound_predictor" not in state:
+                state["state"]["bound_predictor"] = IndependentBounds()
+        super().__setstate__(state)
+
+
+class BoundsPredictorWithYesNo(SequencePredictionLayer):
+    """ Standard start/end bound prediction """
+
+    def __init__(self, predictor: ChainTriMapper, init: str="glorot_uniform",
+                 span_predictor: SpanFromBoundsPredictor = IndependentBoundsWithYesNo(),
+                 sequence_reducer: SequenceEncoder = ReduceSequenceLayer(reduce="max")):
+        self.predictor = predictor
+        self.init = init
+        self.sequence_reducer = sequence_reducer
+        self.span_predictor = span_predictor
+
+    def apply(self, is_train, context_embed, answer, context_mask=None):
+        init_fn = get_keras_initialization(self.init)
+        with tf.variable_scope("bounds_encoding"):
+            m1, m2, m3 = self.predictor.apply(is_train, context_embed, context_mask)
+
+        with tf.variable_scope("start_pred"):
+            logits1 = fully_connected(m1, 1, activation_fn=None,
+                                      weights_initializer=init_fn)
+            logits1 = tf.squeeze(logits1, squeeze_dims=[2])
+
+        with tf.variable_scope("end_pred"):
+            logits2 = fully_connected(m2, 1, activation_fn=None, weights_initializer=init_fn)
+            logits2 = tf.squeeze(logits2, squeeze_dims=[2])
+
+        with tf.variable_scope("yes_no_pred"):
+            logits3 = self.sequence_reducer.apply(None, m3)
+            logits3 = fully_connected(logits3, 3, activation_fn=None, weights_initializer=init_fn)
+
+        with tf.variable_scope("predict_span"):
+            return self.span_predictor.predict(answer, logits1, logits2, logits3, context_mask)
 
     def __setstate__(self, state):
         if "state" in state:

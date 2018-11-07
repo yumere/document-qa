@@ -58,9 +58,11 @@ class SentencesAndQuestion(ContextAndQuestion):
 class ParagraphAndQuestion(ContextAndQuestion):
 
     def __init__(self, context: List[str], question: List[str],
-                 answer: Optional[Answer], question_id: object, doc_id=None):
+                 answer: Optional[Answer], question_id: object, answer_type=None, doc_id=None):
         super().__init__(question, answer, question_id, doc_id)
         self.context = context
+        if answer_type is not None:
+            self.answer_type = answer_type
 
     @property
     def n_context_words(self):

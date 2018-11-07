@@ -220,15 +220,19 @@ class ParagraphSpans(Answer):
 
 
 class TokenSpans(Answer):
-    __slots__ = ["answer_text", "answer_spans"]
+    __slots__ = ["answer_text", "answer_spans", "answer_yes_no"]
 
-    def __init__(self, answer_text: List[str], answer_spans: np.ndarray):
+    def __init__(self, answer_text: List[str], answer_spans: np.ndarray, answer_yes_no: np.array=None):
         """
         :param answer_text: list of text answers
         :param answer_spans: (n, 2) array of inclusive (start, end) occurrences of an answer
+        :param answer_yes_no: (n,) array of types of an answer (if exist)
         """
         self.answer_text = answer_text
         self.answer_spans = answer_spans
+
+        if answer_yes_no is not None:
+            self.answer_yes_no = answer_yes_no
 
     def get_vocab(self):
         return []

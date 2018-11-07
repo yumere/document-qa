@@ -219,6 +219,67 @@ class Attention(ParagraphQuestionModel):
                 return self.predictor.apply(is_train, context_rep, answer, context_mask)
 
 
+class HotpotAttention(ParagraphQuestionModel):
+    """
+    Model that encodes the question and context, then applies an attention mechanism
+    between the two to produce a query-aware context representation, which is used to make a prediction.
+    """
+    def __init__(self, encoder: DocumentAndQuestionEncoder,
+                 preprocess: Optional[TextPreprocessor],
+                 word_embed: Optional[WordEmbedder],
+                 word_embed_layer: Optional[MapMulti],
+                 char_embed: Optional[CharWordEmbedder],
+                 embed_mapper: Optional[SequenceMapper],
+                 question_mapper: Optional[SequenceMapper],
+                 context_mapper: Optional[SequenceMapper],
+                 memory_builder: SequenceBiMapper,
+                 attention: AttentionMapper,
+                 match_encoder: SequenceMapper,
+                 predictor: Union[SequencePredictionLayer, AttentionPredictionLayer]):
+        super().__init__(encoder, word_embed, char_embed, word_embed_layer, preprocess)
+        self.embed_mapper = embed_mapper
+        self.question_mapper = question_mapper
+        self.context_mapper = context_mapper
+        self.memory_builder = memory_builder
+        self.attention = attention
+        self.match_encoder = match_encoder
+        self.predictor = predictor
+
+    def _get_predictions_for(self, is_train,
+                             question_rep, question_mask,
+                             context_rep, context_mask,
+                             answer) -> Prediction:
+        if self.embed_mapper is not None:
+            with tf.variable_scope("map_embed"):
+                context_rep = self.embed_mapper.apply(is_train, context_rep, context_mask)
+            with tf.variable_scope("map_embed", reuse=True):
+                question_rep = self.embed_mapper.apply(is_train, question_rep, question_mask)
+
+        if self.question_mapper is not None:
+            with tf.variable_scope("map_question"):
+                question_rep = self.question_mapper.apply(is_train, question_rep, question_mask)
+
+        if self.context_mapper is not None:
+            with tf.variable_scope("map_context"):
+                context_rep = self.context_mapper.apply(is_train, context_rep, context_mask)
+
+        with tf.variable_scope("buid_memories"):
+            keys, memories = self.memory_builder.apply(is_train, question_rep, question_mask)
+
+        with tf.variable_scope("apply_attention"):
+            context_rep = self.attention.apply(is_train, context_rep, keys, memories, context_mask, question_mask)
+
+        if self.match_encoder is not None:
+            with tf.variable_scope("process_attention"):
+                context_rep = self.match_encoder.apply(is_train, context_rep, context_mask)
+
+        with tf.variable_scope("predict"):
+            if isinstance(self.predictor, AttentionPredictionLayer):
+                return self.predictor.apply(is_train, context_rep, question_rep, answer, context_mask, question_mask)
+            else:
+                return self.predictor.apply(is_train, context_rep, answer, context_mask)
+
+
 class AttentionAndEncode(ParagraphQuestionModel):
 
     def __init__(self, encoder: DocumentAndQuestionEncoder,

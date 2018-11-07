@@ -15,21 +15,26 @@ Data for cases where we have many paragraphs mapped to a single question
 
 
 class ParagraphWithAnswers(object):
-    __slots__ = ["text", "answer_spans"]
+    __slots__ = ["text", "answer_spans", "answer_yes_no"]
 
-    def __init__(self, text: List[str], answer_spans: np.ndarray):
+    def __init__(self, text: List[str], answer_spans: np.ndarray, answer_yes_no: np.ndarray=None):
         self.text = text
         self.answer_spans = answer_spans
+
+        if answer_yes_no is not None:
+            self.answer_yes_no = answer_yes_no
 
     @classmethod
     def merge(cls, paras: List):
         paras.sort(key=lambda x: x.get_order())
         answer_spans = []
         text = []
+        answer_yes_no = None
         for para in paras:
             answer_spans.append(len(text) + para.answer_spans)
             text += para.text
-        return ParagraphWithAnswers(text, np.concatenate(answer_spans))
+            answer_yes_no = para.answer_yes_no
+        return ParagraphWithAnswers(text, np.concatenate(answer_spans), answer_yes_no)
 
     def get_context(self):
         return self.text
@@ -41,7 +46,7 @@ class ParagraphWithAnswers(object):
         if answer_text is None:
             ans = None
         elif group is None:
-            ans = TokenSpans(answer_text, self.answer_spans)
+            ans = TokenSpans(answer_text, self.answer_spans, self.answer_yes_no)
         else:
             ans = TokenSpanGroup(answer_text, self.answer_spans, group)
         return ParagraphAndQuestion(self.text, question, ans, question_id)
@@ -51,8 +56,8 @@ class DocumentParagraph(ParagraphWithAnswers):
     __slots__ = ["doc_id", "start", "end", "rank"]
 
     def __init__(self, doc_id: str, start: int, end: int, rank: int,
-                 answer_spans: np.ndarray, text: List[str]):
-        super().__init__(text, answer_spans)
+                 answer_spans: np.ndarray, text: List[str], answer_yes_no: np.ndarray=None):
+        super().__init__(text, answer_spans, answer_yes_no)
         self.doc_id = doc_id
         self.start = start
         self.rank = rank

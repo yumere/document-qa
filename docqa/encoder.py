@@ -112,6 +112,45 @@ class DenseMultiSpanAnswerEncoder(AnswerEncoder):
         return DenseMultiSpanAnswerEncoder()
 
 
+class DenseMultiSpanAnswerWithYesNoEncoder(AnswerEncoder):
+    """ Encode the answer spans into bool (span_start) and (span_end) and (answer_yes_no) arrays """
+
+    def __init__(self):
+        self.answer_starts = None
+        self.answer_ends = None
+        self.answer_yes_no = None
+
+    def get_placeholders(self) -> List:
+        return [self.answer_starts, self.answer_ends, self.answer_yes_no]
+
+    def init(self, batch_size, context_word_dim):
+        self.answer_starts = tf.placeholder('int32', [batch_size, context_word_dim], name='answer_starts')
+        self.answer_ends = tf.placeholder('int32', [batch_size, context_word_dim], name='answer_ends')
+        self.answer_yes_no = tf.placeholder('int32', [batch_size, 3], name='answer_yes_no')
+
+    def encode(self, batch_size, context_len, context_word_dim, batch) -> Dict:
+        answer_starts = np.zeros((batch_size, context_word_dim), dtype=np.int32)
+        answer_ends = np.zeros((batch_size, context_word_dim), dtype=np.int32)
+        answer_yes_no = np.zeros((batch_size, 3), dtype=np.int32)
+
+        for doc_ix, doc in enumerate(batch):
+            if doc.answer is None:
+                continue
+            answer_spans = doc.answer.answer_spans
+            answer_type = doc.answer.answer_yes_no
+            answer_spans = answer_spans[answer_spans[:, 1] < context_word_dim]
+            answer_starts[doc_ix, answer_spans[:, 0]] = True
+            answer_ends[doc_ix, answer_spans[:, 1]] = True
+            answer_yes_no[doc_ix, answer_type[0]] = True
+        return {self.answer_starts: answer_starts, self.answer_ends: answer_ends, self.answer_yes_no: answer_yes_no}
+
+    def __getstate__(self):
+        return {}
+
+    def __setstate__(self, state):
+        return DenseMultiSpanAnswerWithYesNoEncoder()
+
+
 class GroupedSpanAnswerEncoder(AnswerEncoder):
     """ Encode the answer spans into bool (span_start) and (span_end) arrays, and also record
     the group_id if one is present in the answer. Used for the "shared-norm" approach """
