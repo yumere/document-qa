@@ -38,10 +38,10 @@ class HotpotQaSpanDataset(Configurable):
 
         with open(join(self.dir, "hotpot_train_v1.json"), "rb") as f_train:
             # self._raw_train = json.load(f_train)
-            self._raw_train = json.load(f_train)[:2000]
+            self._raw_train = json.load(f_train)
 
         with open(join(self.dir, "hotpot_dev_distractor_v1.json"), "rb") as f_dev:
-            self._raw_dev = json.load(f_dev)[:200]
+            self._raw_dev = json.load(f_dev)
             # self._raw_dev = json.load(f_dev)
 
 

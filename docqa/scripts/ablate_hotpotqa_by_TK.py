@@ -38,7 +38,7 @@ def get_triviaqa_train_params(n_epochs, n_dev, n_train):
     return TrainParams(
         SerializableOptimizer("Adadelta", dict(learning_rate=1)),
         num_epochs=n_epochs, ema=0.9999, max_checkpoints_to_keep=2,
-        async_encoding=10, log_period=30, eval_period=10, save_period=1800,
+        async_encoding=10, log_period=30, eval_period=1000, save_period=1800,
         eval_samples=dict(dev=n_dev, train=n_train))
 
 
@@ -149,7 +149,7 @@ def main():
     else:
         eval = [LossEvaluator(), MultiParagraphSpanWithYesNoEvaluator(8, "hotpotqa", mode != "merge")]
         # we sample two paragraphs per a (question, doc) pair, so evaluate on fewer questions
-        n_dev, n_train = 100, 1000
+        n_dev, n_train = 7000, 7000
 
         if mode == "confidence" or mode == "sigmoid":
             if mode == "sigmoid":
