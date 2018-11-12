@@ -2,35 +2,32 @@ import argparse
 from datetime import datetime
 from typing import Optional
 
-from tensorflow.contrib.keras.python.keras.initializers import TruncatedNormal
+from tensorflow.keras.initializers import TruncatedNormal
 
 from docqa import model_dir
 from docqa import trainer
 from docqa.data_processing.document_splitter import MergeParagraphs, TopTfIdf
-from docqa.data_processing.multi_paragraph_qa import StratifyParagraphsBuilder, \
-    StratifyParagraphSetsBuilder, RandomParagraphSetDatasetBuilder, HotpotParagraphSetDatasetBuilder
+from docqa.data_processing.multi_paragraph_qa import StratifyParagraphsBuilder, RandomParagraphSetDatasetBuilder, \
+    HotpotParagraphSetDatasetBuilder
 from docqa.data_processing.preprocessed_corpus import PreprocessedData
 from docqa.data_processing.qa_training_data import ParagraphAndQuestionsBuilder, ContextLenKey, ContextLenBucketedKey
 from docqa.data_processing.text_utils import NltkPlusStopWords
 from docqa.dataset import ClusteredBatcher
-from docqa.doc_qa_models import Attention, HotpotAttention
+from docqa.doc_qa_models import HotpotAttention
 from docqa.encoder import DocumentAndQuestionEncoder, DenseMultiSpanAnswerEncoder, GroupedSpanAnswerEncoder, \
-                          DenseMultiSpanAnswerWithYesNoEncoder
-from docqa.evaluator import LossEvaluator, MultiParagraphSpanEvaluator, MultiParagraphSpanWithYesNoEvaluator, SpanEvaluator
+    DenseMultiSpanAnswerWithYesNoEncoder
+from docqa.evaluator import LossEvaluator, MultiParagraphSpanWithYesNoEvaluator, SpanEvaluator
+from docqa.hotpotqa.build_span_corpus import HotpotQaSpanDataset
 from docqa.nn.attention import BiAttention, AttentionEncoder, StaticAttentionSelf
 from docqa.nn.embedder import FixedWordEmbedder, CharWordEmbedder, LearnedCharEmbedder
-from docqa.nn.layers import NullBiMapper, SequenceMapperSeq, Conv1d, FullyConnected, \
-    ChainBiMapper, ConcatWithProduct, ResidualLayer, VariationalDropoutLayer, MaxPool, ChainTriMapper
+from docqa.nn.layers import NullBiMapper, SequenceMapperSeq, Conv1d, FullyConnected, ChainBiMapper, ConcatWithProduct, \
+    ResidualLayer, VariationalDropoutLayer, MaxPool, ChainTriMapper
 from docqa.nn.recurrent_layers import CudnnGru
 from docqa.nn.similarity_layers import TriLinear
 from docqa.nn.span_prediction import ConfidencePredictor, BoundsPredictor, IndependentBoundsGrouped, \
     IndependentBoundsSigmoidLoss, BoundsPredictorWithYesNo
 from docqa.text_preprocessor import WithIndicators, TextPreprocessor
 from docqa.trainer import SerializableOptimizer, TrainParams
-
-from docqa.hotpotqa.build_span_corpus import HotpotQaSpanDataset
-
-# from docqa.triviaqa.build_span_corpus import TriviaQaWebDataset
 from docqa.triviaqa.training_data import ExtractSingleParagraph, ExtractMultiParagraphs
 
 
@@ -118,18 +115,15 @@ def get_model(char_th: int, dim: int, mode: str, preprocess: Optional[TextPrepro
 
 def main():
     parser = argparse.ArgumentParser(description='Train a model on TriviaQA web')
-    parser.add_argument('mode', choices=["paragraph-level", "confidence", "merge",
-                                         "shared-norm", "sigmoid", "shared-norm-600"])
+    parser.add_argument('mode', choices=["paragraph-level", "confidence", "merge", "shared-norm", "sigmoid", "shared-norm-600"])
     parser.add_argument("name", help="Where to store the model")
-    parser.add_argument('-n', '--n_processes', type=int, default=2,
-                        help="Number of processes (i.e., select which paragraphs to train on) "
-                             "the data with")
+    parser.add_argument('-n', '--n_processes', type=int, default=2, help="Number of processes (i.e., select which paragraphs to train on) the data with")
     args = parser.parse_args()
     mode = args.mode
 
     out = args.name + "-" + datetime.now().strftime("%m%d-%H%M%S")
 
-    model = get_model(100, 140, mode, WithIndicators())
+    model = get_model(char_th=100, dim=140, mode=mode, preprocess=WithIndicators())
 
     stop = NltkPlusStopWords(True)
 
@@ -179,7 +173,7 @@ def main():
 
     with open(__file__, "r") as f:
         notes = f.read()
-    notes = "*" * 10 + "\nMode: " + args.mode + "\n" + "*"*10 + "\n" + notes
+    notes = "*" * 10 + "\nMode: " + args.mode + "\n" + "*" * 10 + "\n" + notes
 
     trainer.start_training(data, model, params, eval, model_dir.ModelDir(out), notes)
 
