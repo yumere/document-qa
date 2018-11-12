@@ -1,26 +1,17 @@
-import argparse
-from tqdm import tqdm
-
 import numpy as np
 import ujson as json
-import pickle
-import unicodedata
-from itertools import islice
-from os import mkdir
-from os.path import join, exists
-from typing import List, Optional, Dict
+from os.path import join
+from tqdm import tqdm
+from typing import List, Dict
 
-from docqa.config import CORPUS_DIR, TRIVIA_QA, TRIVIA_QA_UNFILTERED
+from docqa.config import CORPUS_DIR
 from docqa.configurable import Configurable
-from docqa.data_processing.text_utils import NltkAndPunctTokenizer
-from docqa.hotpotqa.answer_detection import FastNormalizedAnswerDetector, NormalizedAnswerDetector
-from docqa.triviaqa.evidence_corpus import TriviaQaEvidenceCorpusTxt
-from docqa.triviaqa.read_data import iter_trivia_question, TriviaQaQuestion
-from docqa.utils import ResourceLoader
-
 from docqa.data_processing.multi_paragraph_qa import MultiParagraphQuestion, DocumentParagraph
 from docqa.data_processing.preprocessed_corpus import FilteredData
 from docqa.data_processing.text_utils import NltkAndPunctTokenizer
+from docqa.hotpotqa.answer_detection import FastNormalizedAnswerDetector
+from docqa.utils import ResourceLoader
+from docqa.utils import bcolors
 
 
 class HotpotQaSpanDataset(Configurable):
@@ -37,37 +28,16 @@ class HotpotQaSpanDataset(Configurable):
         self.missed_answer = 0
 
         with open(join(self.dir, "hotpot_train_v1.json"), "rb") as f_train:
-            # self._raw_train = json.load(f_train)
             self._raw_train = json.load(f_train)
 
         with open(join(self.dir, "hotpot_dev_distractor_v1.json"), "rb") as f_dev:
             self._raw_dev = json.load(f_dev)
-            # self._raw_dev = json.load(f_dev)
-
-
-            # with open(join(self.dir, "file_map.json"), "r") as f:
-            #     file_map = json.load(f)
-            # for k, v in file_map.items():
-            #     file_map[k] = unicodedata.normalize("NFD", v)
-            # self.evidence = TriviaQaEvidenceCorpusTxt(file_map)
-
-    # def get_train(self) -> List[Dict]:
-    #     with open(join(self.dir, "hotpot_train_v1.json"), "rb") as f:
-    #         return json.load(f)
 
     def get_train(self) -> List[Dict]:
         return self._train
 
-    # def get_dev(self) -> List[Dict]:
-    #     with open(join(self.dir, "hotpot_dev_distractor_v1.json"), "rb") as f:
-    #         return json.load(f)
-
     def get_dev(self) -> List[Dict]:
         return self._dev
-
-    # def get_test(self) -> List[Dict]:
-    #     with open(join(self.dir, "test.pkl"), "rb") as f:
-    #         return pickle.load(f)
 
     def get_resource_loader(self):
         return ResourceLoader()
@@ -76,17 +46,16 @@ class HotpotQaSpanDataset(Configurable):
         dataset = {'train': self._raw_train, 'dev': self._raw_dev}
 
         for d in dataset:
-            print("preprocess for {}".format(d))
+            tqdm.write(bcolors.OKBLUE + "[+] Preprocess for {} set".format(d) + bcolors.ENDC)
             self.missed_answer = 0
-            for question in tqdm(dataset[d]):
+            for question in tqdm(dataset[d], desc=d, ncols=70):
                 # if question['type'] == 'bridge':
                 # if question['answer'] != 'yes' and question['answer'] != 'no':
                 question_id = question['_id']
                 question_text = self.tokenizer.tokenize_paragraph_flat(question['question'])
                 answer_text = [question['answer']]
                 supporting_facts = question['supporting_facts']
-                paragraphs = self._get_document_paragraph(question['context'], answer_text,
-                                                          answer_para=supporting_facts)
+                paragraphs = self._get_document_paragraph(question['context'], answer_text, answer_para=supporting_facts)
 
                 if paragraphs is not None:
                     if d == 'train':
@@ -94,10 +63,10 @@ class HotpotQaSpanDataset(Configurable):
                     elif d == 'dev':
                         self._dev.append(MultiParagraphQuestion(question_id, question_text, answer_text, paragraphs))
 
-            print("{} missed data count: {}".format(d, self.missed_answer))
+            print(bcolors.WARNING + "[*] {} missed data count: {:,}".format(d, self.missed_answer) + bcolors.ENDC)
 
-        print('train size: ', len(self._train))
-        print('dev size: ', len(self._dev))
+        print(bcolors.OKBLUE + "[+] Train Size: {:,}".format(len(self._train)) + bcolors.ENDC)
+        print(bcolors.OKBLUE + "[+] Dev Size: {:,}".format(len(self._dev)) + bcolors.ENDC)
 
         self._train = FilteredData(self._train, len(self._train))
         self._dev = FilteredData(self._dev, len(self._dev))
