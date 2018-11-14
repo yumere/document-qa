@@ -37,7 +37,7 @@ class StaticAttention(AttentionMapper):
             # if needed since the sum of the weights given to each memory can be < 1.
             bias = tf.exp(tf.get_variable("no-alignment-bias", initializer=tf.constant(-1.0, dtype=tf.float32)))
             dist_matrix = tf.exp(dist_matrix)
-            select_probs = dist_matrix / (tf.reduce_sum(dist_matrix, axis=2, keep_dims=True) + bias)
+            select_probs = dist_matrix / (tf.reduce_sum(dist_matrix, axis=2, keepdims=True) + bias)
 
         #  Too (batch, x_word, memory_dim)
         response = tf.matmul(select_probs, memories)
@@ -82,7 +82,7 @@ class StaticAttentionSelf(SequenceMapper):
             # Allow zero-attention by adding a learned bias to the normalizer
             bias = tf.exp(tf.get_variable("no-alignment-bias", initializer=tf.constant(-1.0, dtype=tf.float32)))
             dist_matrix = tf.exp(dist_matrix)
-            select_probs = dist_matrix / (tf.reduce_sum(dist_matrix, axis=2, keep_dims=True) + bias)
+            select_probs = dist_matrix / (tf.reduce_sum(dist_matrix, axis=2, keepdims=True) + bias)
 
         response = tf.matmul(select_probs, x)  # (batch, x_words, q_dim)
 
@@ -174,7 +174,7 @@ class StaticAttentionWithEncoder(AttentionMapper):
         else:
             bias = tf.exp(tf.get_variable("no-alignment-bias", initializer=tf.constant(-1.0, dtype=tf.float32)))
             dist_matrix = tf.exp(dist_matrix)
-            select_probs = dist_matrix / (tf.reduce_sum(dist_matrix, axis=2, keep_dims=True) + bias)
+            select_probs = dist_matrix / (tf.reduce_sum(dist_matrix, axis=2, keepdims=True) + bias)
 
         #  Too (batch, x_word, memory_dim)
         response = tf.matmul(select_probs, memories)
