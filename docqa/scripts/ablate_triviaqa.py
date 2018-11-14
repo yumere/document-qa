@@ -2,7 +2,7 @@ import argparse
 from datetime import datetime
 from typing import Optional
 
-from tensorflow.contrib.keras.python.keras.initializers import TruncatedNormal
+from tensorflow.keras.initializers import TruncatedNormal
 
 from docqa import model_dir
 from docqa import trainer
