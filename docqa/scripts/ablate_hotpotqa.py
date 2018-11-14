@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Optional
 
 from tensorflow.keras.initializers import TruncatedNormal
+from tqdm import tqdm
 
 from docqa import model_dir
 from docqa import trainer
@@ -29,6 +30,7 @@ from docqa.nn.span_prediction import ConfidencePredictor, BoundsPredictor, Indep
 from docqa.text_preprocessor import WithIndicators, TextPreprocessor
 from docqa.trainer import SerializableOptimizer, TrainParams
 from docqa.triviaqa.training_data import ExtractSingleParagraph, ExtractMultiParagraphs
+from docqa.utils import bcolors
 
 
 def get_triviaqa_train_params(n_epochs, n_dev, n_train):
@@ -160,15 +162,12 @@ def main():
             test = HotpotParagraphSetDatasetBuilder(64, "merge" if mode == "merge" else "group", True, 1)
             train = HotpotParagraphSetDatasetBuilder(32, "merge" if mode == "merge" else "group", True, 1)
 
-    data = HotpotQaSpanDataset("hotpotqa")
-
-    data.preprocess()
+    data = HotpotQaSpanDataset.load("hotpotqa")
+    tqdm.write(bcolors.OKGREEN + "[+] Load dataset" + bcolors.ENDC)
 
     params = get_triviaqa_train_params(n_epochs, n_dev, n_train)
 
-    # data = PreprocessedData(data, extract, train, test, eval_on_verified=False)
     data = PreprocessedData(data, None, train, test, eval_on_verified=False)
-
     data.preprocess(args.n_processes, 1000)
 
     with open(__file__, "r") as f:
