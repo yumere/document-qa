@@ -57,6 +57,9 @@ class HotpotQaSpanDataset(Configurable):
             tokenized_aliases = [tokenizer.tokenize_paragraph_flat(x) for x in answer_text]
             detector.set_question(tokenized_aliases)
 
+            # 0: no
+            # 1: yes
+            # 2: answer spans
             answer_type = 2
             if answer_text[0].lower() == 'yes':
                 answer_type = 0
@@ -66,12 +69,12 @@ class HotpotQaSpanDataset(Configurable):
             # golden paragraph 만 고르는 과정
             if supporting_facts is not None:
                 answer_para_title = [p[0] for p in supporting_facts]
-                documents = [d for d in question['context'] if d[0] in [s[0] for s in supporting_facts]]
+                documents = [d for d in question['context'] if d[0] in answer_para_title]
 
             if len(documents) < 2:
                 tqdm.write(bcolors.WARNING + "The number of golden paragraph is not two" + bcolors.ENDC)
 
-            get_answer_span = False
+            offset = 0
             for i, d in enumerate(documents):
                 title, paragraph = d[0], d[1]
                 text_paragraph = " ".join(paragraph)
@@ -83,9 +86,8 @@ class HotpotQaSpanDataset(Configurable):
                 # answer가 span 일 경우
                 if answer_type == 2:
                     spans = []
-                    offset = 0
                     for s, e in detector.any_found([text]):
-                        spans.append((s+offset, e+offset - 1))
+                        spans.append((s + offset, e + offset))
 
                     if len(spans) == 0:
                         answer_spans = np.zeros((0, 2), dtype=np.int32)
@@ -105,7 +107,8 @@ class HotpotQaSpanDataset(Configurable):
                         answer_spans = np.zeros((0, 2), dtype=np.int32)
 
                 answer_yes_no = np.array([answer_type], dtype=np.int32)
-                paragraphs.append(DocumentParagraph(title, start, end, rank, answer_spans, text, answer_yes_no))
+                paragraphs.append(DocumentParagraph(title, start + offset, end + offset, rank, answer_spans, text, answer_yes_no))
+                offset += end
 
             if paragraphs is not None:
                 questions_chunk.append(MultiParagraphQuestion(question_id, question_text, answer_text, paragraphs))
@@ -126,7 +129,6 @@ class HotpotQaSpanDataset(Configurable):
         for d in dataset:
             with Pool(n_processes) as pool, tqdm(total=len(dataset[d]), desc=d, ncols=70) as pbar:
                 tqdm.write(bcolors.OKBLUE + "[+] Preprocess for {} set".format(d) + bcolors.ENDC)
-                missed_answer = 0
                 chunks = split(dataset[d], n_processes)
 
                 for questions in pool.starmap(hotpotqa._build_question, [[c, hotpotqa.tokenizer, hotpotqa.detector] for c in chunks]):
